@@ -4,8 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/rpc"
-
-	"github.com/hashicorp/go-hclog"
+	"os"
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/vault/helper/pluginutil"
@@ -23,13 +22,17 @@ type backendPluginServer struct {
 	backend logical.Backend
 	factory logical.Factory
 
-	logger        hclog.Logger
+	loggerClient  *rpc.Client
 	sysViewClient *rpc.Client
 	storageClient *rpc.Client
 }
 
+func inMetadataMode() bool {
+	return os.Getenv(pluginutil.PluginMetadaModeEnv) == "true"
+}
+
 func (b *backendPluginServer) HandleRequest(args *HandleRequestArgs, reply *HandleRequestReply) error {
-	if pluginutil.InMetadataMode() {
+	if inMetadataMode() {
 		return ErrServerInMetadataMode
 	}
 
@@ -53,7 +56,7 @@ func (b *backendPluginServer) SpecialPaths(_ interface{}, reply *SpecialPathsRep
 }
 
 func (b *backendPluginServer) HandleExistenceCheck(args *HandleExistenceCheckArgs, reply *HandleExistenceCheckReply) error {
-	if pluginutil.InMetadataMode() {
+	if inMetadataMode() {
 		return ErrServerInMetadataMode
 	}
 
@@ -74,13 +77,14 @@ func (b *backendPluginServer) Cleanup(_ interface{}, _ *struct{}) error {
 	b.backend.Cleanup(context.Background())
 
 	// Close rpc clients
+	b.loggerClient.Close()
 	b.sysViewClient.Close()
 	b.storageClient.Close()
 	return nil
 }
 
 func (b *backendPluginServer) InvalidateKey(args string, _ *struct{}) error {
-	if pluginutil.InMetadataMode() {
+	if inMetadataMode() {
 		return ErrServerInMetadataMode
 	}
 
@@ -105,6 +109,19 @@ func (b *backendPluginServer) Setup(args *SetupArgs, reply *SetupReply) error {
 
 	storage := &StorageClient{client: rawStorageClient}
 
+	// Dial for logger
+	loggerConn, err := b.broker.Dial(args.LoggerID)
+	if err != nil {
+		*reply = SetupReply{
+			Error: wrapError(err),
+		}
+		return nil
+	}
+	rawLoggerClient := rpc.NewClient(loggerConn)
+	b.loggerClient = rawLoggerClient
+
+	logger := &LoggerClient{client: rawLoggerClient}
+
 	// Dial for sys view
 	sysViewConn, err := b.broker.Dial(args.SysViewID)
 	if err != nil {
@@ -120,10 +137,9 @@ func (b *backendPluginServer) Setup(args *SetupArgs, reply *SetupReply) error {
 
 	config := &logical.BackendConfig{
 		StorageView: storage,
-		Logger:      b.logger,
+		Logger:      logger,
 		System:      sysView,
 		Config:      args.Config,
-		BackendUUID: args.BackendUUID,
 	}
 
 	// Call the underlying backend factory after shims have been created

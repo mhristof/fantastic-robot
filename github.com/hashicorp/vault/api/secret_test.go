@@ -1190,7 +1190,7 @@ func TestSecret_TokenMetadata(t *testing.T) {
 			false,
 		},
 		{
-			"real_auth_metadata",
+			"real_auth_metdata",
 			&api.Secret{
 				Auth: &api.SecretAuth{
 					Metadata: map[string]string{"foo": "bar"},

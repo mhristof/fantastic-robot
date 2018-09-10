@@ -3,6 +3,7 @@ package api
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestRenewer_NewRenewer(t *testing.T) {
@@ -40,6 +41,19 @@ func TestRenewer_NewRenewer(t *testing.T) {
 			},
 			&Renewer{
 				secret: &Secret{},
+				grace:  DefaultRenewerGrace,
+			},
+			false,
+		},
+		{
+			"custom_grace",
+			&RenewerInput{
+				Secret: &Secret{},
+				Grace:  30 * time.Second,
+			},
+			&Renewer{
+				secret: &Secret{},
+				grace:  30 * time.Second,
 			},
 			false,
 		},

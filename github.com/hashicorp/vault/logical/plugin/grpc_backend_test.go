@@ -6,11 +6,12 @@ import (
 	"testing"
 	"time"
 
-	log "github.com/hashicorp/go-hclog"
+	hclog "github.com/hashicorp/go-hclog"
 	gplugin "github.com/hashicorp/go-plugin"
-	"github.com/hashicorp/vault/helper/logging"
+	"github.com/hashicorp/vault/helper/logformat"
 	"github.com/hashicorp/vault/logical"
 	"github.com/hashicorp/vault/logical/plugin/mock"
+	log "github.com/mgutz/logxi/v1"
 )
 
 func TestGRPCBackendPlugin_impl(t *testing.T) {
@@ -142,8 +143,8 @@ func testGRPCBackend(t *testing.T) (logical.Backend, func()) {
 	pluginMap := map[string]gplugin.Plugin{
 		"backend": &BackendPlugin{
 			Factory: mock.Factory,
-			Logger: log.New(&log.LoggerOptions{
-				Level:      log.Debug,
+			Logger: hclog.New(&hclog.LoggerOptions{
+				Level:      hclog.Trace,
 				Output:     os.Stderr,
 				JSONFormat: true,
 			}),
@@ -162,7 +163,7 @@ func testGRPCBackend(t *testing.T) (logical.Backend, func()) {
 	b := raw.(logical.Backend)
 
 	err = b.Setup(context.Background(), &logical.BackendConfig{
-		Logger: logging.NewVaultLogger(log.Debug),
+		Logger: logformat.NewVaultLogger(log.LevelTrace),
 		System: &logical.StaticSystemView{
 			DefaultLeaseTTLVal: 300 * time.Second,
 			MaxLeaseTTLVal:     1800 * time.Second,

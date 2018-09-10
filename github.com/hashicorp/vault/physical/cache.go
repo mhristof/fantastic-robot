@@ -4,10 +4,9 @@ import (
 	"context"
 	"sync/atomic"
 
-	log "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/golang-lru"
 	"github.com/hashicorp/vault/helper/locksutil"
-	"github.com/hashicorp/vault/helper/pathmanager"
+	log "github.com/mgutz/logxi/v1"
 )
 
 const (
@@ -15,26 +14,16 @@ const (
 	DefaultCacheSize = 128 * 1024
 )
 
-// These paths don't need to be cached by the LRU cache. This should
-// particularly help memory pressure when unsealing.
-var cacheExceptionsPaths = []string{
-	"wal/logs/",
-	"index/pages/",
-	"index-dr/pages/",
-	"sys/expire/",
-}
-
 // Cache is used to wrap an underlying physical backend
 // and provide an LRU cache layer on top. Most of the reads done by
 // Vault are for policy objects so there is a large read reduction
 // by using a simple write-through cache.
 type Cache struct {
-	backend         Backend
-	lru             *lru.TwoQueueCache
-	locks           []*locksutil.LockEntry
-	logger          log.Logger
-	enabled         *uint32
-	cacheExceptions *pathmanager.PathManager
+	backend Backend
+	lru     *lru.TwoQueueCache
+	locks   []*locksutil.LockEntry
+	logger  log.Logger
+	enabled *uint32
 }
 
 // TransactionalCache is a Cache that wraps the physical that is transactional
@@ -52,15 +41,12 @@ var _ Transactional = (*TransactionalCache)(nil)
 // NewCache returns a physical cache of the given size.
 // If no size is provided, the default size is used.
 func NewCache(b Backend, size int, logger log.Logger) *Cache {
-	if logger.IsDebug() {
-		logger.Debug("creating LRU cache", "size", size)
+	if logger.IsTrace() {
+		logger.Trace("physical/cache: creating LRU cache", "size", size)
 	}
 	if size <= 0 {
 		size = DefaultCacheSize
 	}
-
-	pm := pathmanager.New()
-	pm.AddPaths(cacheExceptionsPaths)
 
 	cache, _ := lru.New2Q(size)
 	c := &Cache{
@@ -69,8 +55,7 @@ func NewCache(b Backend, size int, logger log.Logger) *Cache {
 		locks:   locksutil.CreateLocks(),
 		logger:  logger,
 		// This fails safe.
-		enabled:         new(uint32),
-		cacheExceptions: pm,
+		enabled: new(uint32),
 	}
 	return c
 }
@@ -81,14 +66,6 @@ func NewTransactionalCache(b Backend, size int, logger log.Logger) *Transactiona
 		Transactional: b.(Transactional),
 	}
 	return c
-}
-
-func (c *Cache) shouldCache(key string) bool {
-	if atomic.LoadUint32(c.enabled) == 0 {
-		return false
-	}
-
-	return !c.cacheExceptions.HasPath(key)
 }
 
 // SetEnabled is used to toggle whether the cache is on or off. It must be
@@ -113,7 +90,7 @@ func (c *Cache) Purge(ctx context.Context) {
 }
 
 func (c *Cache) Put(ctx context.Context, entry *Entry) error {
-	if entry != nil && !c.shouldCache(entry.Key) {
+	if atomic.LoadUint32(c.enabled) == 0 {
 		return c.backend.Put(ctx, entry)
 	}
 
@@ -129,7 +106,7 @@ func (c *Cache) Put(ctx context.Context, entry *Entry) error {
 }
 
 func (c *Cache) Get(ctx context.Context, key string) (*Entry, error) {
-	if !c.shouldCache(key) {
+	if atomic.LoadUint32(c.enabled) == 0 {
 		return c.backend.Get(ctx, key)
 	}
 
@@ -152,13 +129,15 @@ func (c *Cache) Get(ctx context.Context, key string) (*Entry, error) {
 	}
 
 	// Cache the result
-	c.lru.Add(key, ent)
+	if ent != nil {
+		c.lru.Add(key, ent)
+	}
 
 	return ent, nil
 }
 
 func (c *Cache) Delete(ctx context.Context, key string) error {
-	if !c.shouldCache(key) {
+	if atomic.LoadUint32(c.enabled) == 0 {
 		return c.backend.Delete(ctx, key)
 	}
 
@@ -181,11 +160,6 @@ func (c *Cache) List(ctx context.Context, prefix string) ([]string, error) {
 }
 
 func (c *TransactionalCache) Transaction(ctx context.Context, txns []*TxnEntry) error {
-	// Bypass the locking below
-	if atomic.LoadUint32(c.enabled) == 0 {
-		return c.Transactional.Transaction(ctx, txns)
-	}
-
 	// Collect keys that need to be locked
 	var keys []string
 	for _, curr := range txns {
@@ -201,16 +175,14 @@ func (c *TransactionalCache) Transaction(ctx context.Context, txns []*TxnEntry) 
 		return err
 	}
 
-	for _, txn := range txns {
-		if !c.shouldCache(txn.Entry.Key) {
-			continue
-		}
-
-		switch txn.Operation {
-		case PutOperation:
-			c.lru.Add(txn.Entry.Key, txn.Entry)
-		case DeleteOperation:
-			c.lru.Remove(txn.Entry.Key)
+	if atomic.LoadUint32(c.enabled) == 1 {
+		for _, txn := range txns {
+			switch txn.Operation {
+			case PutOperation:
+				c.lru.Add(txn.Entry.Key, txn.Entry)
+			case DeleteOperation:
+				c.lru.Remove(txn.Entry.Key)
+			}
 		}
 	}
 

@@ -2,12 +2,9 @@ package plugin
 
 import (
 	"crypto/tls"
-	"math"
 	"os"
 
-	"google.golang.org/grpc"
-
-	log "github.com/hashicorp/go-hclog"
+	hclog "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/vault/helper/pluginutil"
 	"github.com/hashicorp/vault/logical"
@@ -17,12 +14,12 @@ import (
 // dispensed rom the plugin server.
 const BackendPluginName = "backend"
 
-type TLSProviderFunc func() (*tls.Config, error)
+type TLSProdiverFunc func() (*tls.Config, error)
 
 type ServeOpts struct {
 	BackendFactoryFunc logical.Factory
-	TLSProviderFunc    TLSProviderFunc
-	Logger             log.Logger
+	TLSProviderFunc    TLSProdiverFunc
+	Logger             hclog.Logger
 }
 
 // Serve is a helper function used to serve a backend plugin. This
@@ -30,8 +27,8 @@ type ServeOpts struct {
 func Serve(opts *ServeOpts) error {
 	logger := opts.Logger
 	if logger == nil {
-		logger = log.New(&log.LoggerOptions{
-			Level:      log.Trace,
+		logger = hclog.New(&hclog.LoggerOptions{
+			Level:      hclog.Trace,
 			Output:     os.Stderr,
 			JSONFormat: true,
 		})
@@ -57,11 +54,7 @@ func Serve(opts *ServeOpts) error {
 		Logger:          logger,
 
 		// A non-nil value here enables gRPC serving for this plugin...
-		GRPCServer: func(opts []grpc.ServerOption) *grpc.Server {
-			opts = append(opts, grpc.MaxRecvMsgSize(math.MaxInt32))
-			opts = append(opts, grpc.MaxSendMsgSize(math.MaxInt32))
-			return plugin.DefaultGRPCServer(opts)
-		},
+		GRPCServer: plugin.DefaultGRPCServer,
 	}
 
 	if !pluginutil.GRPCSupport() {

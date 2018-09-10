@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/vault/logical"
 )
 
@@ -123,7 +122,7 @@ func (p *Path) helpCallback() OperationFunc {
 
 		help, err := executeTemplate(pathHelpTemplate, &tplData)
 		if err != nil {
-			return nil, errwrap.Wrapf("error executing template: {{err}}", err)
+			return nil, fmt.Errorf("error executing template: %s", err)
 		}
 
 		return logical.HelpResponse(help, nil), nil

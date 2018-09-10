@@ -7,7 +7,6 @@
 //    }
 //    log.Printf(res)
 //
-// Most functions are safe for concurrent use.
 package password
 
 import (
@@ -49,57 +48,6 @@ var (
 	ErrSymbolsExceedsAvailable = errors.New("number of symbols exceeds available symbols and repeats are not allowed")
 )
 
-// Generator is the stateful generator which can be used to customize the list
-// of letters, digits, and/or symbols.
-type Generator struct {
-	lowerLetters string
-	upperLetters string
-	digits       string
-	symbols      string
-}
-
-// GeneratorInput is used as input to the NewGenerator function.
-type GeneratorInput struct {
-	LowerLetters string
-	UpperLetters string
-	Digits       string
-	Symbols      string
-}
-
-// NewGenerator creates a new Generator from the specified configuration. If no
-// input is given, all the default values are used. This function is safe for
-// concurrent use.
-func NewGenerator(i *GeneratorInput) (*Generator, error) {
-	if i == nil {
-		i = new(GeneratorInput)
-	}
-
-	g := &Generator{
-		lowerLetters: i.LowerLetters,
-		upperLetters: i.UpperLetters,
-		digits:       i.Digits,
-		symbols:      i.Symbols,
-	}
-
-	if g.lowerLetters == "" {
-		g.lowerLetters = LowerLetters
-	}
-
-	if g.upperLetters == "" {
-		g.upperLetters = UpperLetters
-	}
-
-	if g.digits == "" {
-		g.digits = Digits
-	}
-
-	if g.symbols == "" {
-		g.symbols = Symbols
-	}
-
-	return g, nil
-}
-
 // Generate generates a password with the given requirements. length is the
 // total number of characters in the password. numDigits is the number of digits
 // to include in the result. numSymbols is the number of symbols to include in
@@ -107,11 +55,11 @@ func NewGenerator(i *GeneratorInput) (*Generator, error) {
 // allows characters to repeat.
 //
 // The algorithm is fast, but it's not designed to be performant; it favors
-// entropy over speed. This function is safe for concurrent use.
-func (g *Generator) Generate(length, numDigits, numSymbols int, noUpper, allowRepeat bool) (string, error) {
-	letters := g.lowerLetters
+// entropy over speed.
+func Generate(length, numDigits, numSymbols int, noUpper, allowRepeat bool) (string, error) {
+	letters := LowerLetters
 	if !noUpper {
-		letters += g.upperLetters
+		letters += UpperLetters
 	}
 
 	chars := length - numDigits - numSymbols
@@ -123,11 +71,11 @@ func (g *Generator) Generate(length, numDigits, numSymbols int, noUpper, allowRe
 		return "", ErrLettersExceedsAvailable
 	}
 
-	if !allowRepeat && numDigits > len(g.digits) {
+	if !allowRepeat && numDigits > len(Digits) {
 		return "", ErrDigitsExceedsAvailable
 	}
 
-	if !allowRepeat && numSymbols > len(g.symbols) {
+	if !allowRepeat && numSymbols > len(Symbols) {
 		return "", ErrSymbolsExceedsAvailable
 	}
 
@@ -153,7 +101,7 @@ func (g *Generator) Generate(length, numDigits, numSymbols int, noUpper, allowRe
 
 	// Digits
 	for i := 0; i < numDigits; i++ {
-		d, err := randomElement(g.digits)
+		d, err := randomElement(Digits)
 		if err != nil {
 			return "", err
 		}
@@ -171,7 +119,7 @@ func (g *Generator) Generate(length, numDigits, numSymbols int, noUpper, allowRe
 
 	// Symbols
 	for i := 0; i < numSymbols; i++ {
-		sym, err := randomElement(g.symbols)
+		sym, err := randomElement(Symbols)
 		if err != nil {
 			return "", err
 		}
@@ -191,25 +139,6 @@ func (g *Generator) Generate(length, numDigits, numSymbols int, noUpper, allowRe
 }
 
 // MustGenerate is the same as Generate, but panics on error.
-func (g *Generator) MustGenerate(length, numDigits, numSymbols int, noUpper, allowRepeat bool) string {
-	res, err := g.Generate(length, numDigits, numSymbols, noUpper, allowRepeat)
-	if err != nil {
-		panic(err)
-	}
-	return res
-}
-
-// See Generator.Generate for usage.
-func Generate(length, numDigits, numSymbols int, noUpper, allowRepeat bool) (string, error) {
-	gen, err := NewGenerator(nil)
-	if err != nil {
-		return "", err
-	}
-
-	return gen.Generate(length, numDigits, numSymbols, noUpper, allowRepeat)
-}
-
-// See Generator.MustGenerate for usage.
 func MustGenerate(length, numDigits, numSymbols int, noUpper, allowRepeat bool) string {
 	res, err := Generate(length, numDigits, numSymbols, noUpper, allowRepeat)
 	if err != nil {

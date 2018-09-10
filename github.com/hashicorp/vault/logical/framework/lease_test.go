@@ -1,26 +1,27 @@
 package framework
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/vault/logical"
 )
 
-func TestCalculateTTL(t *testing.T) {
+func TestLeaseExtend(t *testing.T) {
+
 	testSysView := logical.StaticSystemView{
 		DefaultLeaseTTLVal: 5 * time.Hour,
 		MaxLeaseTTLVal:     30 * time.Hour,
 	}
 
+	now := time.Now().Round(time.Hour)
+
 	cases := map[string]struct {
-		Increment      time.Duration
 		BackendDefault time.Duration
 		BackendMax     time.Duration
-		Period         time.Duration
-		ExplicitMaxTTL time.Duration
+		Increment      time.Duration
 		Result         time.Duration
-		Warnings       int
 		Error          bool
 	}{
 		"valid request, good bounds, increment is preferred": {
@@ -51,7 +52,6 @@ func TestCalculateTTL(t *testing.T) {
 			BackendDefault: 40 * time.Hour,
 			BackendMax:     45 * time.Hour,
 			Result:         30 * time.Hour,
-			Warnings:       1,
 		},
 
 		"all request values are larger than the system view, so the system view limits": {
@@ -59,7 +59,6 @@ func TestCalculateTTL(t *testing.T) {
 			BackendMax:     50 * time.Hour,
 			Increment:      40 * time.Hour,
 			Result:         30 * time.Hour,
-			Warnings:       1,
 		},
 
 		"request within backend max": {
@@ -74,7 +73,6 @@ func TestCalculateTTL(t *testing.T) {
 			BackendMax:     4 * time.Hour,
 			Increment:      5 * time.Hour,
 			Result:         4 * time.Hour,
-			Warnings:       1,
 		},
 
 		"request is negative, no backend default, use sysview": {
@@ -85,34 +83,22 @@ func TestCalculateTTL(t *testing.T) {
 		"lease increment too large": {
 			Increment: 40 * time.Hour,
 			Result:    30 * time.Hour,
-			Warnings:  1,
-		},
-
-		"periodic, good request, period is preferred": {
-			Increment:      3 * time.Hour,
-			BackendDefault: 4 * time.Hour,
-			BackendMax:     2 * time.Hour,
-			Period:         1 * time.Hour,
-			Result:         1 * time.Hour,
-		},
-
-		"period too large, explicit max ttl is preferred": {
-			Period:         2 * time.Hour,
-			ExplicitMaxTTL: 1 * time.Hour,
-			Result:         1 * time.Hour,
-			Warnings:       1,
-		},
-
-		"period too large, capped by backend max": {
-			Period:     2 * time.Hour,
-			BackendMax: 1 * time.Hour,
-			Result:     1 * time.Hour,
-			Warnings:   1,
 		},
 	}
 
 	for name, tc := range cases {
-		ttl, warnings, err := CalculateTTL(testSysView, tc.Increment, tc.BackendDefault, tc.Period, tc.BackendMax, tc.ExplicitMaxTTL, time.Time{})
+		req := &logical.Request{
+			Auth: &logical.Auth{
+				LeaseOptions: logical.LeaseOptions{
+					TTL:       1 * time.Hour,
+					IssueTime: now,
+					Increment: tc.Increment,
+				},
+			},
+		}
+
+		callback := LeaseExtend(tc.BackendDefault, tc.BackendMax, testSysView)
+		resp, err := callback(context.Background(), req, nil)
 		if (err != nil) != tc.Error {
 			t.Fatalf("bad: %s\nerr: %s", name, err)
 		}
@@ -121,14 +107,9 @@ func TestCalculateTTL(t *testing.T) {
 		}
 
 		// Round it to the nearest hour
-		now := time.Now().Round(time.Hour)
-		lease := now.Add(ttl).Round(time.Hour).Sub(now)
+		lease := now.Add(resp.Auth.TTL).Round(time.Hour).Sub(now)
 		if lease != tc.Result {
 			t.Fatalf("bad: %s\nlease: %s", name, lease)
-		}
-
-		if tc.Warnings != len(warnings) {
-			t.Fatalf("bad: %s\nwarning count mismatch, expect %d, got %d: %#v", name, tc.Warnings, len(warnings), warnings)
 		}
 	}
 }

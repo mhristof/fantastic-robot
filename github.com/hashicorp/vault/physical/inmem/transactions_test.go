@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	radix "github.com/armon/go-radix"
-	log "github.com/hashicorp/go-hclog"
-	"github.com/hashicorp/vault/helper/logging"
+	"github.com/hashicorp/vault/helper/logformat"
 	"github.com/hashicorp/vault/physical"
+	log "github.com/mgutz/logxi/v1"
 )
 
 type faultyPseudo struct {
@@ -70,11 +70,7 @@ func newFaultyPseudo(logger log.Logger, faultyPaths []string) *faultyPseudo {
 		underlying: InmemBackend{
 			root:       radix.New(),
 			permitPool: physical.NewPermitPool(1),
-			logger:     logger.Named("storage.inmembackend"),
-			failGet:    new(uint32),
-			failPut:    new(uint32),
-			failDelete: new(uint32),
-			failList:   new(uint32),
+			logger:     logger,
 		},
 		faultyPaths: make(map[string]struct{}, len(faultyPaths)),
 	}
@@ -85,21 +81,21 @@ func newFaultyPseudo(logger log.Logger, faultyPaths []string) *faultyPseudo {
 }
 
 func TestPseudo_Basic(t *testing.T) {
-	logger := logging.NewVaultLogger(log.Debug)
+	logger := logformat.NewVaultLogger(log.LevelTrace)
 	p := newFaultyPseudo(logger, nil)
 	physical.ExerciseBackend(t, p)
 	physical.ExerciseBackend_ListPrefix(t, p)
 }
 
 func TestPseudo_SuccessfulTransaction(t *testing.T) {
-	logger := logging.NewVaultLogger(log.Debug)
+	logger := logformat.NewVaultLogger(log.LevelTrace)
 	p := newFaultyPseudo(logger, nil)
 
 	physical.ExerciseTransactionalBackend(t, p)
 }
 
 func TestPseudo_FailedTransaction(t *testing.T) {
-	logger := logging.NewVaultLogger(log.Debug)
+	logger := logformat.NewVaultLogger(log.LevelTrace)
 	p := newFaultyPseudo(logger, []string{"zip"})
 
 	txns := physical.SetupTestingTransactions(t, p)

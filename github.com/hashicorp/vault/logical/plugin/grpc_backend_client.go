@@ -3,16 +3,15 @@ package plugin
 import (
 	"context"
 	"errors"
-	"math"
 	"sync/atomic"
 
 	"google.golang.org/grpc"
 
-	log "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/vault/helper/pluginutil"
 	"github.com/hashicorp/vault/logical"
 	"github.com/hashicorp/vault/logical/plugin/pb"
+	log "github.com/mgutz/logxi/v1"
 )
 
 var ErrPluginShutdown = errors.New("plugin is shut down")
@@ -196,9 +195,6 @@ func (b *backendGRPCPluginClient) Setup(ctx context.Context, config *logical.Bac
 
 	// Register the server in this closure.
 	serverFunc := func(opts []grpc.ServerOption) *grpc.Server {
-		opts = append(opts, grpc.MaxRecvMsgSize(math.MaxInt32))
-		opts = append(opts, grpc.MaxSendMsgSize(math.MaxInt32))
-
 		s := grpc.NewServer(opts...)
 		pb.RegisterSystemViewServer(s, sysView)
 		pb.RegisterStorageServer(s, storage)
@@ -210,9 +206,8 @@ func (b *backendGRPCPluginClient) Setup(ctx context.Context, config *logical.Bac
 	go b.broker.AcceptAndServe(brokerID, serverFunc)
 
 	args := &pb.SetupArgs{
-		BrokerID:    brokerID,
-		Config:      config.Config,
-		BackendUUID: config.BackendUUID,
+		BrokerID: brokerID,
+		Config:   config.Config,
 	}
 
 	ctx, cancel := context.WithCancel(ctx)

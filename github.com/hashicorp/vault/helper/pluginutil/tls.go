@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"time"
@@ -29,6 +30,10 @@ var (
 	// PluginCACertPEMEnv is an ENV name used for holding a CA PEM-encoded
 	// string. Used for testing.
 	PluginCACertPEMEnv = "VAULT_TESTING_PLUGIN_CA_PEM"
+
+	// PluginMetadaModeEnv is an ENV name used to disable TLS communication
+	// to bootstrap mounting plugins.
+	PluginMetadaModeEnv = "VAULT_PLUGIN_METADATA_MODE"
 )
 
 // generateCert is used internally to create certificates for the plugin
@@ -78,7 +83,7 @@ func generateCert() ([]byte, *ecdsa.PrivateKey, error) {
 func createClientTLSConfig(certBytes []byte, key *ecdsa.PrivateKey) (*tls.Config, error) {
 	clientCert, err := x509.ParseCertificate(certBytes)
 	if err != nil {
-		return nil, errwrap.Wrapf("error parsing generated plugin certificate: {{err}}", err)
+		return nil, fmt.Errorf("error parsing generated plugin certificate: %v", err)
 	}
 
 	cert := tls.Certificate{
@@ -123,10 +128,10 @@ func wrapServerConfig(ctx context.Context, sys RunnerUtil, certBytes []byte, key
 	return wrapInfo.Token, nil
 }
 
-// VaultPluginTLSProvider is run inside a plugin and retrieves the response
+// VaultPluginTLSProvider is run inside a plugin and retrives the response
 // wrapped TLS certificate from vault. It returns a configured TLS Config.
 func VaultPluginTLSProvider(apiTLSConfig *api.TLSConfig) func() (*tls.Config, error) {
-	if os.Getenv(PluginMetadataModeEnv) == "true" {
+	if os.Getenv(PluginMetadaModeEnv) == "true" {
 		return nil
 	}
 
@@ -136,7 +141,7 @@ func VaultPluginTLSProvider(apiTLSConfig *api.TLSConfig) func() (*tls.Config, er
 		// Parse the JWT and retrieve the vault address
 		wt, err := jws.ParseJWT([]byte(unwrapToken))
 		if err != nil {
-			return nil, errwrap.Wrapf("error decoding token: {{err}}", err)
+			return nil, fmt.Errorf("error decoding token: %s", err)
 		}
 		if wt == nil {
 			return nil, errors.New("nil decoded token")
@@ -156,7 +161,7 @@ func VaultPluginTLSProvider(apiTLSConfig *api.TLSConfig) func() (*tls.Config, er
 
 		// Sanity check the value
 		if _, err := url.Parse(vaultAddr); err != nil {
-			return nil, errwrap.Wrapf("error parsing the vault api_addr: {{err}}", err)
+			return nil, fmt.Errorf("error parsing the vault api_addr: %s", err)
 		}
 
 		// Unwrap the token
@@ -189,12 +194,12 @@ func VaultPluginTLSProvider(apiTLSConfig *api.TLSConfig) func() (*tls.Config, er
 
 		serverCertBytes, err := base64.StdEncoding.DecodeString(serverCertBytesRaw)
 		if err != nil {
-			return nil, errwrap.Wrapf("error parsing certificate: {{err}}", err)
+			return nil, fmt.Errorf("error parsing certificate: %v", err)
 		}
 
 		serverCert, err := x509.ParseCertificate(serverCertBytes)
 		if err != nil {
-			return nil, errwrap.Wrapf("error parsing certificate: {{err}}", err)
+			return nil, fmt.Errorf("error parsing certificate: %v", err)
 		}
 
 		// Retrieve and parse the server's private key
@@ -205,12 +210,12 @@ func VaultPluginTLSProvider(apiTLSConfig *api.TLSConfig) func() (*tls.Config, er
 
 		serverKeyRaw, err := base64.StdEncoding.DecodeString(serverKeyB64)
 		if err != nil {
-			return nil, errwrap.Wrapf("error parsing certificate: {{err}}", err)
+			return nil, fmt.Errorf("error parsing certificate: %v", err)
 		}
 
 		serverKey, err := x509.ParseECPrivateKey(serverKeyRaw)
 		if err != nil {
-			return nil, errwrap.Wrapf("error parsing certificate: {{err}}", err)
+			return nil, fmt.Errorf("error parsing certificate: %v", err)
 		}
 
 		// Add CA cert to the cert pool

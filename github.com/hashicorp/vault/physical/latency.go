@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"time"
 
-	log "github.com/hashicorp/go-hclog"
+	log "github.com/mgutz/logxi/v1"
 )
 
 const (
@@ -37,7 +37,7 @@ func NewLatencyInjector(b Backend, latency time.Duration, jitter int, logger log
 	if jitter < 0 || jitter > 100 {
 		jitter = DefaultJitterPercent
 	}
-	logger.Info("creating latency injector")
+	logger.Info("physical/latency: creating latency injector")
 
 	return &LatencyInjector{
 		backend:       b,

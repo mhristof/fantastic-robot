@@ -27,7 +27,7 @@ func (s *GRPCStorageClient) List(ctx context.Context, prefix string) ([]string, 
 		Prefix: prefix,
 	}, largeMsgGRPCCallOpts...)
 	if err != nil {
-		return []string{}, err
+		return reply.Keys, err
 	}
 	if reply.Err != "" {
 		return reply.Keys, errors.New(reply.Err)

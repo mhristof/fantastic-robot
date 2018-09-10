@@ -11,11 +11,10 @@ import (
 
 	"sync"
 
-	"github.com/hashicorp/errwrap"
-	log "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/vault/helper/pluginutil"
 	"github.com/hashicorp/vault/logical"
+	log "github.com/mgutz/logxi/v1"
 )
 
 // init registers basic structs with gob which will be used to transport complex
@@ -74,13 +73,13 @@ func NewBackend(ctx context.Context, pluginName string, sys pluginutil.LookRunne
 		// from the pluginRunner. Then cast it to logical.Backend.
 		backendRaw, err := pluginRunner.BuiltinFactory()
 		if err != nil {
-			return nil, errwrap.Wrapf("error getting plugin type: {{err}}", err)
+			return nil, fmt.Errorf("error getting plugin type: %s", err)
 		}
 
 		var ok bool
 		backend, ok = backendRaw.(logical.Backend)
 		if !ok {
-			return nil, fmt.Errorf("unsupported backend type: %q", pluginName)
+			return nil, fmt.Errorf("unsuported backend type: %s", pluginName)
 		}
 
 	} else {
@@ -102,14 +101,12 @@ func newPluginClient(ctx context.Context, sys pluginutil.RunnerUtil, pluginRunne
 		},
 	}
 
-	namedLogger := logger.Named(pluginRunner.Name)
-
 	var client *plugin.Client
 	var err error
 	if isMetadataMode {
-		client, err = pluginRunner.RunMetadataMode(ctx, sys, pluginMap, handshakeConfig, []string{}, namedLogger)
+		client, err = pluginRunner.RunMetadataMode(ctx, sys, pluginMap, handshakeConfig, []string{}, logger)
 	} else {
-		client, err = pluginRunner.Run(ctx, sys, pluginMap, handshakeConfig, []string{}, namedLogger)
+		client, err = pluginRunner.Run(ctx, sys, pluginMap, handshakeConfig, []string{}, logger)
 	}
 	if err != nil {
 		return nil, err
@@ -139,14 +136,16 @@ func newPluginClient(ctx context.Context, sys pluginutil.RunnerUtil, pluginRunne
 		backend = raw.(*backendGRPCPluginClient)
 		transport = "gRPC"
 	default:
-		return nil, errors.New("unsupported plugin client type")
+		return nil, errors.New("Unsupported plugin client type")
 	}
 
 	// Wrap the backend in a tracing middleware
-	if namedLogger.IsTrace() {
+	if logger.IsTrace() {
 		backend = &backendTracingMiddleware{
-			logger: namedLogger.With("transport", transport),
-			next:   backend,
+			logger:    logger,
+			transport: transport,
+			typeStr:   pluginRunner.Name,
+			next:      backend,
 		}
 	}
 

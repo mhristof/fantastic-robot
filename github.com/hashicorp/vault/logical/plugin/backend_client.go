@@ -5,9 +5,9 @@ import (
 	"errors"
 	"net/rpc"
 
-	log "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/vault/logical"
+	log "github.com/mgutz/logxi/v1"
 )
 
 var (
@@ -63,11 +63,10 @@ type HandleExistenceCheckReply struct {
 
 // SetupArgs is the args for Setup method.
 type SetupArgs struct {
-	StorageID   uint32
-	LoggerID    uint32
-	SysViewID   uint32
-	Config      map[string]string
-	BackendUUID string
+	StorageID uint32
+	LoggerID  uint32
+	SysViewID uint32
+	Config    map[string]string
 }
 
 // SetupReply is the reply for Setup method.
@@ -204,6 +203,16 @@ func (b *backendPluginClient) Setup(ctx context.Context, config *logical.Backend
 		impl: storageImpl,
 	})
 
+	// Shim log.Logger
+	loggerImpl := config.Logger
+	if b.metadataMode {
+		loggerImpl = log.NullLog
+	}
+	loggerID := b.broker.NextId()
+	go b.broker.AcceptAndServe(loggerID, &LoggerServer{
+		logger: loggerImpl,
+	})
+
 	// Shim logical.SystemView
 	sysViewImpl := config.System
 	if b.metadataMode {
@@ -215,10 +224,10 @@ func (b *backendPluginClient) Setup(ctx context.Context, config *logical.Backend
 	})
 
 	args := &SetupArgs{
-		StorageID:   storageID,
-		SysViewID:   sysViewID,
-		Config:      config.Config,
-		BackendUUID: config.BackendUUID,
+		StorageID: storageID,
+		LoggerID:  loggerID,
+		SysViewID: sysViewID,
+		Config:    config.Config,
 	}
 	var reply SetupReply
 
